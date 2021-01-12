@@ -1,0 +1,475 @@
+```{r}
+library(googledrive)
+temp <- tempfile(fileext =".csv" )
+dl <- drive_download(as_id("18UuEmpJZSNqg75_nEQLlQOqZtTMSED7Z"), path = temp, overwrite = TRUE)
+kc <- read.csv(temp)
+unlink(temp)
+summary(kc)
+str(kc)
+dim(kc)
+##Date needs to be transformed to date format.
+##Bedrooms has max of 33 and min of 0. 0 can be a missing value and 33 can be an outlier. Need to check.
+##Bathrooms has max of 8 and min of 0. Need to check for outliers.
+##checking for missing values
+sapply(kc, function(x) sum(is.na(x)))
+##checking for duplicates
+table(duplicated(kc))
+##Variables not considered for analysis - id,lat,long
+##sqft_living is sum of sqft_above & sqft_basement, hence, sqft_above & sqft_basement can cause multicollinearity and can be safely dropped
+(table(kc$yr_renovated==0))
+##Yr_renovated has 20699 zeros out of 21613 values and hence doesn't provide much information. Instead we can use sqft_living15 and sqft_lot15 to deduce renovation. These variables can be converted to a categorical variable with renovation = Y/N?
+kc$orgarea<-kc$sqft_living+kc$sqft_lot
+kc$renoarea<-kc$sqft_living15+kc$sqft_lot15
+kc$renovation<-ifelse(kc$orgarea==kc$renoarea,0,1)
+str(kc)
+##removing id,sqft_above,sqft_basement,yr_renovated,lat,long,sqft_living15,sqft_lot15,orgarea,renoarea
+kc1<-kc[,-c(1,13,14,16,18:23)]
+dim(kc1)
+##checking for possible outliers in predictor bedrooms
+kc1[kc1$bedrooms==33,]
+kc1[kc1$bedrooms==11,]
+##33 bedrooms 1.75 bathrooms don't make sense, neither does 11 bedrooms and 3 bathrooms.
+##removing these outliers
+kc1<-(kc1[-c(15871,8758),])
+
+plot(kc1$zipcode,kc1$price)
+##The plot for zipcode shows some are high sales price zipcode areas and other lower, converting zipcode to usable predictor based on levels of "price"
+quantile(tapply(kc1$price,kc1$zipcode,median),seq(0,1,0.25))
+##converting zipcode to categorical variable with 4 levels corresponding to the quartiles for "price"-->
+##"Very Low" - between Q1 and min, "Low" - between median & Q1, "Medium" - between Q3 & median,"High"-between max and Q3
+
+kc1$zipvalue<-ifelse(kc1$price<319437.5,"Very Low",ifelse(kc1$price==319437.5|kc1$price<447975,"Low",(ifelse(kc1$price==447975|kc1$price<574250,"Medium","High"))))
+##dropping zipcode
+kc1<-kc1[,-13]
+dim(kc1)
+summary(kc1)
+##changing data types of predictors
+kc1$bedrooms<-as.factor(kc1$bedrooms)
+kc1$bathrooms<-as.factor(kc1$bathrooms)
+kc1$floors<-as.factor(kc1$floors)
+kc1$waterfront<-as.factor(kc1$waterfront)
+kc1$view<-as.factor(kc1$view)
+kc1$condition<-as.factor(kc1$condition)
+kc1$grade<-as.factor(kc1$grade)
+kc1$zipvalue<-as.factor(kc1$zipvalue)
+kc1$renovation<-as.factor(kc1$renovation)
+kc1$sqft_living<-as.numeric(kc1$sqft_living)
+kc1$sqft_lot<-as.numeric(kc1$sqft_lot)
+kc1$date<-as.Date(kc1$date,"%Y%m%d")
+str(kc1)
+summary(kc1)
+library(ggplot2)
+library(scales)
+
+##Exploratory Graphs
+
+## Response Variable Distribution
+
+PD<-qplot(price/1000, data = kc1,geom = "histogram", xlab="Price in Thousands of $",main="Price Distribution Chart",
+          fill=I("Light Blue"), col=I("pink"))+ theme_bw() + 
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) +
+  ggtitle("Price Distribution Chart\n")
+PD
+
+# Zipcode
+
+qplot(zipvalue,price/1000,data = kc1, geom = "boxplot",fill=I("turquoise"), col=I("pink"), xlab="Zip Value",
+      ylab="Price in Thousands of $", main = "Zip Value Vs Price") + theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))+ ggtitle("Zip Value Vs Price\n")
+
+# Floors
+
+qplot(floors,price/1000,data = kc1, geom = "boxplot",fill=I("turquoise"), col=I("pink"), xlab="No. of Floors",
+      ylab="Price in Thousands of $", main = "No. of Floors Vs. Price") +
+  theme_bw() + theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))+
+  ggtitle("No. of Floors Vs. Price\n")
+
+# Bedrooms
+
+qplot(bedrooms,price/1000, data = kc1, geom = "boxplot", xlab = "No. of Bedrooms",
+      ylab = "Price in Thousands of $", main = "No. of Bedrooms Vs. Price",fill=I("Light Blue"),col=I("pink"))+
+  theme_bw()+ theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))+
+  ggtitle("No. of Bedrooms Vs. Price\n")
+
+# Bathrooms
+
+qplot(bathrooms,price/1000, data = kc1, geom = "boxplot", xlab = "No. of Bathrooms",
+      ylab = "Price in Thousands of $", main = "No. of Bathrooms Vs. Price",fill=I("Light Blue"),col=I("pink"))+
+  theme_bw()+ theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5))+
+  ggtitle("No. of Bathrooms Vs. Price\n")
+
+
+# Waterfront
+
+qplot(waterfront,price/1000,data=kc1, geom = "boxplot", xlab="Waterfront View", ylab = "Price in Thousands of $",
+      main = "Waterfront View Vs Price",fill=I("Light Blue"), col=I("pink"))+ theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Waterfront View Vs Price\n")
+
+# View    
+
+qplot(view,price/1000,data=kc1,geom = "boxplot", xlab="No. of Views", ylab = "Price in Thousands of $",
+      main = "No. of Views Vs Price",fill=I("Light Blue"), col=I("pink"))+ theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("No. of Views Vs Price\n")
+
+# Condition
+
+qplot(condition,price/1000,data=kc1,geom = "boxplot", xlab="Condition of the Building", ylab = "Price in Thousands of $",
+      main = "Condition Vs Price",fill=I("Light Blue"), col=I("pink"))+ theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Condition Vs Price\n")
+
+# Grade
+
+qplot(grade,price/1000,data=kc1,geom = "boxplot", xlab="Grade of the Building", ylab = "Price in Thousands of $",
+      main = "Grade Vs Price",fill=I("Light Blue"), col=I("pink"))+ theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Grade Vs Price\n")
+
+# Renovation
+
+qplot(renovation,price/1000,data = kc1,geom = "boxplot", xlab="Renovation", ylab = "Price in Thousands of $",
+      main = "Renovation Vs Price",fill=I("Light Blue"), col=I("pink"))+ theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Renovation Vs Price\n")
+
+library(scales)
+
+# Date
+
+ggplot(data = kc1,
+       aes(x=as.Date(cut(kc1$date,
+                         breaks = "month")), price/1000)) +xlab("Month")+ ylab("Price in Thousands of $")+labs(title="Month Vs Price")+theme_bw()+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Month Vs Price\n")+
+  stat_summary(fun.y = sum, 
+               geom = "line") + 
+  scale_x_date(
+    labels = date_format("%Y-%m"),
+    breaks = "1 month")
+
+# Year Built:
+ggplot(data = kc1,
+       aes(x=yr_built, kc1$price/1000)) +xlab("Year  Built")+ ylab("Price in Thousands of $")+labs(title="Yr_Built Vs Price")+theme_bw()+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Yr_Built Vs Price\n")+
+  stat_summary(fun.y = mean,
+               geom = "line") 
+
+#sqft_living
+
+qplot(sqft_living,price/1000,data = kc1,geom = "jitter", xlab="sqft_living", ylab = "Price in Thousands of $",
+      main = "Sqft_Living Vs Price",fill=I("Light Blue"), col=I("pink"))+ theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Sqft_Living Vs Price\n")
+
+
+# sqft_lot
+
+qplot(sqft_lot,price/1000,data = kc1,geom = "jitter", xlab="sqft_lot", ylab = "Price in Thousands of $",
+      main = "Sqft_Lot Vs Price",fill=I("Light Blue"), col=I("pink"))+ theme_bw() +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Sqft_Lot Vs Price\n")
+
+
+## numerical variables dataset
+num<-kc1[,c(2,5,6)]
+res<-round(cor(num),2)
+res
+library(corrplot)
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+##sqft_living is highly correlated with response variable, which is intuitive
+
+
+library(sjPlot)
+plot<-kc1
+plot[]<-lapply(plot,as.integer)
+sjp.corr(plot)
+##correlation matrix shows high correlation between sqft_living & price, grade & price, sqft_living & grade, bathrooms & sqft_living. need to check for multicollinearity
+# Partitioning into train & test
+library(caret)
+set.seed(12345)
+index<-createDataPartition(y=kc1$price,times=1,p=0.7,list=FALSE)
+train<-kc1[index,]
+test<-kc1[-index,]
+dim(train)
+dim(test)
+modview<-lm(price~.,data=train)
+summary(modview)
+
+## Creating dummy variables
+
+##Bedroom0 as base
+train$bedrooms1<-ifelse(train$bedrooms==1,1,0)
+train$bedrooms2<-ifelse(train$bedrooms==2,1,0)
+train$bedrooms3<-ifelse(train$bedrooms==3,1,0)
+train$bedrooms4<-ifelse(train$bedrooms==4,1,0)
+train$bedrooms5<-ifelse(train$bedrooms==5,1,0)
+train$bedrooms6<-ifelse(train$bedrooms==6,1,0)
+train$bedrooms7<-ifelse(train$bedrooms==7,1,0)
+train$bedrooms8<-ifelse(train$bedrooms==8,1,0)
+train$bedrooms9<-ifelse(train$bedrooms==9,1,0)
+train$bedrooms10<-ifelse(train$bedrooms==10,1,0)
+
+
+##Grade13 as base
+train$grade3<- ifelse(train$grade==3,1,0)
+train$grade4<- ifelse(train$grade==4,1,0) 
+train$grade5<- ifelse(train$grade==5,1,0)
+train$grade6<- ifelse(train$grade==6,1,0)
+train$grade7<- ifelse(train$grade==7,1,0)
+train$grade8<- ifelse(train$grade==8,1,0)
+train$grade9<- ifelse(train$grade==9,1,0)
+train$grade10<- ifelse(train$grade==10,1,0)
+train$grade11<- ifelse(train$grade==11,1,0)
+train$grade12<- ifelse(train$grade==12,1,0)
+train$grade13<- ifelse(train$grade==13,1,0)
+
+##Dropping insignificant variables like renovation,grade 4 to 10, condition, and all bedrooms except bedroom6, bedroom9 and bedroom10
+
+##Model 1
+
+mod1<-lm(price~date+bedrooms6+bedrooms9+bedrooms10+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+grade11+grade12+grade13+yr_built+zipvalue,data=train)
+
+summary(mod1)
+
+##stepwise regression
+step(mod1,direction="both")
+
+##Assumptions check
+
+##Linear relationship is demonstrated by significance of predictor variables in the model, we see linear relationship
+
+## For multivariate normality
+
+qplot(mod1$residuals/1000,geom = "histogram" ,xlab = "Residual", ylab = "Frequency", main= "Histogram of Residuals",
+      fill=I("Light Blue"), col=I("pink"))+ theme_bw() +theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Histogram of Residuals\n" )
+
+
+```
+
+
+```{r}
+##behaviour seems Normal
+library(car)
+#qqPlot(mod1)
+
+## check for multicollinearity
+
+library(car)
+#vif(mod1)
+
+
+##homoscedasticity
+
+plot(mod1$fitted.values/1000,mod1$residuals/1000, col="turquoise", xlab = "Fitted Values", ylab="Residuals", 
+     main = "Fitted Values Vs. Residual") 
+
+##Funnel shape observed
+
+##Model 2
+
+##Remedy for homescedastic behaviour: 
+##1)applying log transform to the response variable
+
+mod2<-lm(log(price)~date+bedrooms6+bedrooms9+bedrooms10+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+grade11+grade12+grade13+yr_built+zipvalue,data=train)
+
+summary(mod2)
+
+##Assumptions check
+
+##Linear relationship is demonstrated by significance of predictor variables in the model, we see linear relationship
+
+## For multivariate normality
+
+qplot(mod2$residuals/1000,geom = "histogram" ,xlab = "Residual", ylab = "Frequency", main= "Histogram of Residuals",
+      fill=I("Light Blue"), col=I("pink"))+ theme_bw() +theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Histogram of Residuals\n" )
+
+## Comment: behaviour seems Normal, better than mod1
+library(qqplotr)
+qqPlot(mod2)
+
+## check for multicollinearity
+
+library(car)
+vif(mod2)
+
+##homoscedasticity
+
+plot(mod2$fitted.values/1000,mod1$residuals/1000, col="turquoise", xlab = "Fitted Values", ylab="Residuals", 
+     main = "Fitted Values Vs. Residual") 
+
+# Comment: Seems ok, fairly random and homoscedastic
+
+##Model 3
+
+##Remedy for homescedastic behaviour: 
+##1)applying sqrt transform to the response variable
+
+mod3<-lm(sqrt(price)~date+bedrooms6+bedrooms9+bedrooms10+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+grade11+grade12+grade13+yr_built+zipvalue,data=train)
+
+summary(mod3)
+
+##Assumptions check
+
+##Linear relationship is demonstrated by significance of predictor variables in the model, we see linear relationship
+
+## For multivariate normality
+
+qplot(mod3$residuals/1000,geom = "histogram" ,xlab = "Residual", ylab = "Frequency", main= "Histogram of Residuals",
+      fill=I("Light Blue"), col=I("pink"))+ theme_bw() +theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Histogram of Residuals\n" )
+
+## Comment: behaviour seems Normal, better than mod1 but not than mod2
+
+qqPlot(mod3)
+
+## check for multicollinearity
+
+library(car)
+vif(mod3)
+
+##homoscedasticity
+
+plot(mod3$fitted.values/1000,mod1$residuals/1000, col="turquoise", xlab = "Fitted Values", ylab="Residuals", 
+     main = "Fitted Values Vs. Residual") 
+
+# Comment: Seems ok, fairly random and homoscedastic
+
+##Model 4
+
+##Remedy for homescedastic behaviour: 
+##1)applying log and cube root transform to the response variable
+
+mod4<-lm(log10(price^(1/3))~date+bedrooms6+bedrooms9+bedrooms10+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+grade11+grade12+grade13+yr_built+zipvalue,data=train)
+
+summary(mod4)
+
+##Assumptions check
+
+##Linear relationship is demonstrated by significance of predictor variables in the model, we see linear relationship
+
+## For multivariate normality
+
+qplot(mod4$residuals/1000,geom = "histogram" ,xlab = "Residual", ylab = "Frequency", main= "Histogram of Residuals",
+      fill=I("Light Blue"), col=I("pink"))+ theme_bw() +theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Histogram of Residuals\n" )
+
+## Comment: behaviour seems Normal, best so far
+
+qqPlot(mod4)
+
+## check for multicollinearity
+
+library(car)
+vif(mod4)
+
+##homoscedasticity
+
+plot(mod4$fitted.values/1000,mod1$residuals/1000, col="turquoise", xlab = "Fitted Values", ylab="Residuals", 
+     main = "Fitted Values Vs. Residual") 
+
+# Comment: Seems ok, fairly random and homoscedastic
+
+##Although mod3 with sqrt transform on response variable has least R-squared, the cone shape returns indication homoscedasticity. Hence, mod2 or mod4 give better results with same R-squared.
+
+##Use both models on test dataset and compare model performance using CV
+
+
+###Prediction using mod2 i.e. log transform on response
+
+predicted_mod2<-mod2$fitted.values
+actual<-log(train$price)
+
+predmod2<-data.frame(predicted_mod2,actual)
+predmod2
+
+pmod2<-ggplot(predmod2,aes(x=row(predmod2)[,2],y=predicted_mod2, xlab="Actual", ylab="Predicted"))
+
+pmod2+theme_bw()+ geom_line(colour="turquoise")+geom_line(data=predmod2,aes(y=actual),colour="pink",alpha=0.7) +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) +xlab("Actual")+ylab("Predicted")+ ggtitle("Predicted Vs Actual - Model2_train\n")
+
+## Validation on Test Data
+
+mod2_test<-lm(formula = log(price) ~date + bedrooms+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+
+            grade+yr_built+zipvalue,data=test)
+summary(mod2_test)
+
+qqPlot(mod2_test)#qqplot looks okay
+qplot(mod2_test$residuals,geom = "histogram" ,xlab = "Residual", ylab = "Frequency", main= "Histogram of Residuals",
+      fill=I("Light Blue"),col=I("pink"))+ theme_bw() +theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Histogram of Residuals\n" )
+
+plot(mod2_test$fitted.values,mod2_test$residuals, col="turquoise")# Seems ok, fairly random and homoscedastic
+
+predicted_mod2_test<-mod2_test$fitted.values
+actual_test<-log(test$price)
+
+predmod2test<-data.frame(predicted_mod2_test,actual_test)
+predmod2test
+
+pmod2test<-ggplot(predmod2test,aes(x=row(predmod2test)[,2],y=predicted_mod2_test))
+pmod2test+theme_bw()+geom_line(colour="turquoise")+geom_line(data=predmod2test,aes(y=actual_test),colour="pink",alpha=0.7)+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + xlab("Actual")+ylab("Predicted")+ggtitle("Predicted Vs Actual - Model2_test\n")
+
+
+###Prediction using mod2 i.e. log transform on response
+
+predicted_mod2<-mod2$fitted.values
+actual<-log(train$price)
+
+predmod2<-data.frame(predicted_mod2,actual)
+predmod2
+
+pmod2<-ggplot(predmod2,aes(x=row(predmod2)[,2],y=predicted_mod2, xlab="Actual", ylab="Predicted"))
+
+pmod2+theme_bw()+ geom_line(colour="turquoise")+geom_line(data=predmod2,aes(y=actual),colour="pink",alpha=0.7) +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) +xlab("Actual")+ylab("Predicted")+ ggtitle("Predicted Vs Actual - Model2_train\n")
+
+## Validation on Test Data
+
+mod2_test<-lm(formula = log(price) ~date + bedrooms+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+
+                grade+yr_built+zipvalue,data=test)
+summary(mod2_test)
+
+qqPlot(mod2_test)#qqplot looks okay
+qplot(mod2_test$residuals,geom = "histogram" ,xlab = "Residual", ylab = "Frequency", main= "Histogram of Residuals",
+      fill=I("Light Blue"),col=I("pink"))+ theme_bw() +theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Histogram of Residuals\n" )
+
+plot(mod2_test$fitted.values,mod2_test$residuals, col="turquoise")# Seems ok, fairly random and homoscedastic
+
+predicted_mod2_test<-mod2_test$fitted.values
+actual_test<-log(test$price)
+
+predmod2test<-data.frame(predicted_mod2_test,actual_test)
+predmod2test
+
+pmod2test<-ggplot(predmod2test,aes(x=row(predmod2test)[,2],y=predicted_mod2_test))
+pmod2test+theme_bw()+geom_line(colour="turquoise")+geom_line(data=predmod2test,aes(y=actual_test),colour="pink",alpha=0.7)+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + xlab("Actual")+ylab("Predicted")+ggtitle("Predicted Vs Actual - Model2_test\n")
+
+
+###Prediction using mod4 i.e. cube root transform on response
+
+predicted_mod4<-mod4$fitted.values
+
+predmod4<-data.frame(predicted_mod4,actual)
+predmod4
+
+pmod4<-ggplot(predmod4,aes(x=row(predmod4)[,2],y=predicted_mod4, xlab="Actual", ylab="Predicted"))
+
+pmod4+theme_bw()+ geom_line(colour="turquoise")+geom_line(data=predmod4,aes(y=actual),colour="pink",alpha=0.7) +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) +xlab("Actual")+ylab("Predicted")+ ggtitle("Predicted Vs Actual - Model4_train\n")
+
+## Validation on Test Data
+
+mod4_test<-lm(formula = log(price) ~date + bedrooms+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+
+                grade+yr_built+zipvalue,data=test)
+summary(mod4_test)
+
+qqPlot(mod4_test)#qqplot looks okay
+qplot(mod4_test$residuals,geom = "histogram" ,xlab = "Residual", ylab = "Frequency", main= "Histogram of Residuals",
+      fill=I("Light Blue"),col=I("pink"))+ theme_bw() +theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + ggtitle("Histogram of Residuals\n" )
+
+plot(mod4_test$fitted.values,mod4_test$residuals, col="turquoise")# Seems ok, fairly random and homoscedastic
+
+predicted_mod4_test<-mod4_test$fitted.values
+
+predmod4test<-data.frame(predicted_mod4_test,actual_test)
+predmod4test
+
+pmod4test<-ggplot(predmod4test,aes(x=row(predmod4test)[,2],y=predicted_mod4_test))
+pmod4test+theme_bw()+geom_line(colour="turquoise")+geom_line(data=predmod4test,aes(y=actual_test),colour="pink",alpha=0.7)+
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5)) + xlab("Actual")+ylab("Predicted")+ggtitle("Predicted Vs Actual - Model4_test\n")
+```
+
